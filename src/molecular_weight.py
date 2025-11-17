@@ -161,24 +161,18 @@ class MLP(nn.Module):
         #     if isinstance(m, nn.Linear):
         #         nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
 
-        # 将标准矩阵初始化为可学习参数 (12x12)
-        # 最佳实践：使用 Xavier/Glorot 初始化（适用于线性层）
         self.standard_matrix = nn.Parameter(
             torch.empty(12, 12),
             requires_grad=True
         )
         
-        # 初始化参数
         self._init_parameters()
     
     def _init_parameters(self):
-        # Xavier/Glorot 初始化（保持输入输出的方差一致）
         nn.init.xavier_uniform_(self.standard_matrix, gain=1.0)
         
-        # 或者使用更简单的随机初始化（可选）
         # nn.init.uniform_(self.standard_matrix, -0.1, 0.1)
         
-        # 如果希望矩阵初始接近单位矩阵（适合距离度量）
         # nn.init.eye_(self.standard_matrix)
         # self.standard_matrix.data += 0.01 * torch.randn_like(self.standard_matrix)
 
@@ -284,22 +278,18 @@ class MyLoss_Pairwise(nn.Module):
         # self.relative_atom_mass = torch.mul(self.relative_atom_mass, torch.tensor([12.354086, 8.779627, 2.5210264, 2.0930214, 1.1193496, 0.6389612, 0.5923029, 0.26856133, 0.16532433, 0.06922156, 0.06374216, 0.08806009]).cuda()) / 156.01707373005718
         # self.standard_matrix = self._create_standard_matrix()
         
-        # TODO: 将标准矩阵设置为可学习的参数，是一个 12*12 的矩阵
-
         self.loss_weight = 10
 
         
 
     def _create_standard_matrix(self):
-        """创建原子质量的标准差值矩阵"""
-        # 生成 12x12 的矩阵，每个元素是 mass[i] - mass[j]
-        mass = self.relative_atom_mass.unsqueeze(1)  # 转换为列向量
-        return mass - mass.T  # 广播计算差值矩阵
+        mass = self.relative_atom_mass.unsqueeze(1)
+        return mass - mass.T
 
     def forward(self, input_, label_true, label_predict, standard_matrix):
         mse_loss = self.mse_loss(label_predict, label_true)
         gradient = gradients(label_predict, input_)
-        assert gradient.size(1) == 12, "梯度维度应为12个特征"
+        assert gradient.size(1) == 12, "Expected gradient size (batch_size, 12)"
         pred_matrix = self._create_prediction_matrix(gradient)
         batch_size = gradient.size(0)
         target_matrix = standard_matrix.unsqueeze(0).expand(batch_size, -1, -1)
@@ -312,7 +302,7 @@ class MyLoss_Pairwise(nn.Module):
         # gradient shape: (batch_size, 12)
         x = gradient.unsqueeze(2)  # (batch, 12, 1)
         y = gradient.unsqueeze(1)  # (batch, 1, 12)
-        return x - y  # 广播得到 (batch, 12, 12)
+        return x - y
 
 def train(trial_version):
     data_loader_train, data_loader_validate, data_loader_test = get_data_loader()
@@ -388,8 +378,8 @@ def train(trial_version):
             # print("==============================  original ================")
             # relative_atom_mass = torch.tensor([1.008, 12.011, 15.999, 14.007, 18.998, 32.06, 35.45, 79.904, 30.973, 126.9, 10.81, 28.085]).cuda()
             # relative_atom_mass = torch.mul(relative_atom_mass, torch.tensor([12.354086, 8.779627, 2.5210264, 2.0930214, 1.1193496, 0.6389612, 0.5923029, 0.26856133, 0.16532433, 0.06922156, 0.06374216, 0.08806009]).cuda()) / 156.01707373005718
-            # mass = relative_atom_mass.unsqueeze(1)  # 转换为列向量
-            # print(mass - mass.T)  # 广播计算差值矩阵
+            # mass = relative_atom_mass.unsqueeze(1)
+            # print(mass - mass.T)
             # print("=========================================================")
 
     p = multiprocessing.Process(target=plot_metric_evolution_during_training, args=(trial_version, epoch, metric_list_train, metric_list_validate, metric_list_test, learning_rate_list))
@@ -510,133 +500,9 @@ def plot_metric_evolution_after_training(trial_version):
     plt.tick_params(axis='y')
     plt.legend(loc='upper left')
     plt.savefig(f'../data/result/{trial_version}_metric_evolution_1.png')
-
-def temp_0():
-    import torch
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    # 元素符号和原子质量对应表 (按您的顺序)
-    elements = ['H', 'C', 'O', 'N', 'F', 'S', 'Cl', 'Br', 'P', 'I', 'B', 'Si']
-    atomic_masses = [1.008, 12.011, 15.999, 14.007, 18.998, 32.06, 35.45, 79.904, 30.973, 126.9, 10.81, 28.085]
-
-    # 假设已经加载模型
-    model = MLP()
-    model.load_state_dict(torch.load(f'../weight/molecular_weight_17_1024.pth'))
-    model.eval()
-
-    # 获取学习到的矩阵
-    learned_matrix = model.standard_matrix.detach().cpu().numpy()
-    print(learned_matrix)
-
-    # 计算 groundtruth 矩阵
-    relative_atom_mass = torch.tensor(atomic_masses).cuda()
-    weights = torch.tensor([12.354086, 8.779627, 2.5210264, 2.0930214, 1.1193496, 
-                        0.6389612, 0.5923029, 0.26856133, 0.16532433, 
-                        0.06922156, 0.06374216, 0.08806009]).cuda()
-    weighted_mass = torch.mul(relative_atom_mass, weights) / 156.01707373005718
-    mass_diff_matrix = (weighted_mass.unsqueeze(1) - weighted_mass.unsqueeze(0)).cpu().numpy()
-    print(mass_diff_matrix)
-
-    # 创建画布
-    plt.figure(figsize=(16, 6), dpi=300)
-    # plt.rcParams['font.family'] = 'Arial'  # 学术论文常用字体
-    plt.rcParams['font.size'] = 10
-
-    # 子图1: Learned Rules Matrix
-    plt.subplot(1, 2, 1)
-    sns.heatmap(learned_matrix, 
-                cmap='coolwarm', 
-                center=0,
-                annot=True, 
-                fmt=".2f",
-                xticklabels=elements,
-                yticklabels=elements,
-                cbar_kws={'label': 'Weight Value'})
-    plt.title('Learned Rules Matrix', pad=20, fontweight='bold')
-    plt.xlabel('Element', fontweight='bold')
-    plt.ylabel('Element', fontweight='bold')
-
-    # 子图2: Groundtruth Rules Matrix
-    plt.subplot(1, 2, 2)
-    sns.heatmap(mass_diff_matrix, 
-                cmap='coolwarm', 
-                center=0,
-                annot=True, 
-                fmt=".2f",
-                xticklabels=elements,
-                yticklabels=elements,
-                cbar_kws={'label': 'Mass Difference'})
-    plt.title('Groundtruth Rules Matrix', pad=20, fontweight='bold')
-    plt.xlabel('Element', fontweight='bold')
-
-    # 调整布局
-    plt.tight_layout(pad=3.0)
-
-    # 保存为高分辨率图片（适合论文投稿）
-    plt.savefig('../data/temp/rules_matrix_comparison.png', bbox_inches='tight', transparent=True)
     plt.close()
-
-def temp_1():
-    import torch
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    # 元素符号和原子质量对应表
-    elements = ['H', 'C', 'O', 'N', 'F', 'S', 'Cl', 'Br', 'P', 'I', 'B', 'Si']
-    atomic_masses = [1.008, 12.011, 15.999, 14.007, 18.998, 32.06, 35.45, 79.904, 30.973, 126.9, 10.81, 28.085]
-
-    # 加载模型和数据
-    model = MLP()
-    model.load_state_dict(torch.load(f'../weight/molecular_weight_17_1024.pth'))
-    model.eval()
-
-    # 获取矩阵数据
-    learned_matrix = model.standard_matrix.detach().cpu().numpy()
-    
-    # 计算groundtruth矩阵
-    relative_atom_mass = torch.tensor(atomic_masses).cuda()
-    weights = torch.tensor([12.354086, 8.779627, 2.5210264, 2.0930214, 1.1193496, 
-                          0.6389612, 0.5923029, 0.26856133, 0.16532433, 
-                          0.06922156, 0.06374216, 0.08806009]).cuda()
-    weighted_mass = torch.mul(relative_atom_mass, weights) / 156.01707373005718
-    mass_diff_matrix = (weighted_mass.unsqueeze(1) - weighted_mass.unsqueeze(0)).cpu().numpy()
-
-    # 计算误差矩阵（绝对误差）
-    error_matrix = np.abs(learned_matrix - mass_diff_matrix) * 10 ** 5
-
-    # 创建画布
-    plt.figure(figsize=(10, 8), dpi=300)
-    plt.rcParams['font.size'] = 10
-
-    # 绘制误差热力图
-    ax = sns.heatmap(error_matrix, 
-                    cmap='YlOrRd',  # 黄-橙-红色阶，适合显示误差
-                    annot=True, 
-                    fmt=".2f",
-                    xticklabels=elements,
-                    yticklabels=elements,
-                    cbar_kws={'label': 'Absolute Error'})
-    
-    plt.title('Absolute Error Between Learned and Groundtruth Matrices (* 10^5)', 
-             pad=20, fontweight='bold')
-    plt.xlabel('Element', fontweight='bold')
-    plt.ylabel('Element', fontweight='bold')
-
-    # 调整布局
-    plt.tight_layout()
-
-    # 保存图片
-    plt.savefig('../data/temp/error_matrix.png', bbox_inches='tight', transparent=True)
-    plt.close()
-
-    print("Error heatmap saved to ../data/temp/error_matrix.png")
 
 if __name__ == '__main__':
-    # temp_0()
-    # temp_1()
     trial_version = '18'
     archive_code(trial_version=trial_version)
     set_random_seed(random_seed=1024)
